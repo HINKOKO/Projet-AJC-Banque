@@ -38,10 +38,33 @@ namespace ApiAJCBanque.Controllers
         }*/
 
         // PUT api/<ComptesController>/5
-        /*[HttpPut("{id}")]
-        public void Put(int id, [FromBody] string value)
+        [HttpPut("UpdateSolde/{numeroCompte}")]
+        public async Task<IActionResult> UpdateSolde(string numeroCompte, [FromBody] decimal montant)
         {
-        }*/
+            if (string.IsNullOrEmpty(numeroCompte) || numeroCompte.Length != 11)
+            {
+                return BadRequest("Le numéro de compte doit comporter exactement 11 caractères.");
+            }
+
+            var compte = await _context.Comptes.FirstOrDefaultAsync(c => c.NumeroCompte == numeroCompte);
+            if (compte == null)
+            {
+                return NotFound($"Aucun compte trouvé avec le numéro {numeroCompte}.");
+            }
+
+            compte.Solde += montant;
+
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex)
+            {
+                return StatusCode(500, $"Erreur lors de la mise à jour du solde : {ex.Message}");
+            }
+
+            return Ok($"Le solde du compte {numeroCompte} a été mis à jour avec succès.");
+        }
 
         // DELETE api/<ComptesController>/5
         /*[HttpDelete("{id}")]
