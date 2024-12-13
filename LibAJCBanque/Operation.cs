@@ -4,9 +4,9 @@ namespace LibAJCBanque
 {
     public enum TypeOperation:byte
     {
-        R=1,
-        V=2,
-        C=3
+        R=0,
+        C=1,
+        V=2
     }
     public class Operation
     {
