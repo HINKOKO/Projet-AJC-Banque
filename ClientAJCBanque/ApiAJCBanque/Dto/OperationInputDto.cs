@@ -21,7 +21,7 @@ namespace ApiAJCBanque.Dto
         public DateTime DateOperation { get; set; }
         public string Devise { get; set; }
         public bool IsValid { get; set; }
-        public decimal Rate { get; set; }
+        public decimal? Rate { get; set; }
     }
 
 }
