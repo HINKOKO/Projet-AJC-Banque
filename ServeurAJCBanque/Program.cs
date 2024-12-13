@@ -3,7 +3,6 @@ using Microsoft.Data.SqlClient;
 using ServeurAJCBanque.Models;
 using ServeurAJCBanque.MockBank;
 using System.Text;
-using System.Text.Json.Serialization;
 using System.Text.Json;
 using ServeurAJCBanque.Authentication;
 using ServeurAJCBanque.DbConnection;
@@ -12,7 +11,7 @@ using System.Globalization;
 namespace ServeurAJCBanque.Helpers;
 
 
-internal class Program
+public class Program
 {
     private static List<Transaction> allTxs = null;
     //static string csvPath = @"C:\Users\piotr\OneDrive\Documents\Back_Up_Pizzonio\POEI\NET\sln_AJCBanque\ServeurAJCBanque\datas\transactions\nouvelles_transactions.csv";
@@ -30,8 +29,8 @@ internal class Program
 
         } while (isAuthenticated == false);
 
-        // si accès autoriser - load de toutes les transactions dans une liste
-        loadTransactions();
+        // si accès autoriser - load de toutes les transactions dans la liste
+        allTxs = loadTransactions();
 
         // Boucle sur Menu
         ConsoleKeyInfo choice;
@@ -73,6 +72,50 @@ internal class Program
             Console.ReadKey();
             Console.Clear();
         } while (choice.Key != ConsoleKey.Q);
+    }
+
+    // ======= CHARGER LES TRANSACTIONS EN BASE ============
+    public static List<Transaction> loadTransactions()
+    {
+        allTxs = new List<Transaction>();
+        using (var dbConn = DatabaseConnection.Instance.GetConnection("dbTransactions"))
+        {
+            try
+            {
+                var cmd = dbConn.CreateCommand();
+                cmd.CommandText = "SELECT Id, NumeroCarte, Montant, TypeOp, DateOperation, Devise, IsValid FROM Transactions";
+                var rdr = cmd.ExecuteReader();
+
+                // empty case
+                if (!rdr.HasRows)
+                {
+                    Console.WriteLine("aucun transaction en base!");
+                }
+
+                while (rdr.Read())
+                {
+                    int id = Convert.ToInt32(rdr["Id"]);
+                    string numerocarte = rdr["NumeroCarte"].ToString();
+                    decimal montant = Convert.ToDecimal(rdr["Montant"]);
+                    TypeOperation typeOp = (TypeOperation)Convert.ToInt32(rdr["TypeOp"]);
+                    DateTime dateTime = Convert.ToDateTime(rdr["DateOperation"]);
+                    string devise = rdr["Devise"].ToString();
+                    bool isvalid = Convert.ToBoolean(rdr["IsValid"]);
+
+                    var tx = new Transaction(id, numerocarte, montant, typeOp, dateTime, devise, isvalid);
+                    allTxs.Add(tx);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Erreur lors du chargement de vos transactions en base" + ex.Message + ex.HelpLink);
+            }
+            finally
+            {
+                dbConn.Close();
+            }
+        }
+        return allTxs;
     }
 
     /* ========== RECUPERATION DES DERNIERES TRANSACTIONS ===================== */
@@ -193,7 +236,6 @@ internal class Program
         }
         string connectionString = ConfigurationManager.ConnectionStrings["dbTransactions"]?.ConnectionString;
 
-
         // Démarrer une transaction SQL pour garantir que toutes les insertions réussissent
         using (var dbConn = new SqlConnection(connectionString))
         {
@@ -234,6 +276,10 @@ internal class Program
                 Console.WriteLine($"Erreur lors de l'insertion en base : {ex.Message}");
                 return false;
             }
+            finally
+            {
+                dbConn.Close(); 
+            }
         }
     }
 
@@ -241,52 +287,16 @@ internal class Program
 
 
 
-    // ======= AFFICHER TRANSACTIONS NON EXPORTEES ============
-    public static List<Transaction> loadTransactions()
-    {
-        allTxs = new List<Transaction>();
-        using (var dbConn = DatabaseConnection.Instance.GetConnection("dbTransactions"))
-        {
-            try
-            {
-                var cmd = dbConn.CreateCommand();
-                cmd.CommandText = "SELECT Id, NumeroCarte, Montant, TypeOp, DateOperation, Devise, IsValid FROM Transactions";
-                var rdr = cmd.ExecuteReader();
-
-                // empty case
-                if (!rdr.HasRows)
-                {
-                    Console.WriteLine("aucun transaction en base!");
-                }
-
-                while (rdr.Read())
-                {
-                    int id = Convert.ToInt32(rdr["Id"]);
-                    string numerocarte = rdr["NumeroCarte"].ToString();
-                    decimal montant = Convert.ToDecimal(rdr["Montant"]);
-                    TypeOperation typeOp = (TypeOperation)Convert.ToInt32(rdr["TypeOp"]);
-                    DateTime dateTime = Convert.ToDateTime(rdr["DateOperation"]);
-                    string devise = rdr["Devise"].ToString();
-                    bool isvalid = Convert.ToBoolean(rdr["IsValid"]);
-
-                    var tx = new Transaction(id, numerocarte, montant, typeOp, dateTime, devise, isvalid);
-                    allTxs.Add(tx);
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Erreur lors du chargement de vos transactions en base" + ex.Message + ex.HelpLink);
-            }
-            finally
-            {
-                dbConn.Close();
-            }
-        }
-        return allTxs;
-    }
+   
 
     public static void afficherTransactions(List<Transaction> allTxs)
     {
+        if (allTxs.Count == 0)
+        {
+            loadTransactions();
+            Console.WriteLine("vous n'avez traité aucune transaction pour le moment." );
+            Console.WriteLine("Penser a les recupérer puis traiter via menu 2." );
+        }
         // Construire chaine de resultats
         StringBuilder sb = new StringBuilder();
 
@@ -317,7 +327,6 @@ internal class Program
             }
             Console.WriteLine(sb.ToString());
         }
-
     }
 
     //======= EXPORT AU FORMAT JSON DES TRANSACTIONS VALIDES =========
@@ -365,7 +374,6 @@ internal class Program
 
         using HttpClient client = new HttpClient();
         string requestUrl = $"{apiUrl}{apiKey}/latest/{devise}";
-        Console.WriteLine($"on fetch vers -> {requestUrl}");
 
         try
         {

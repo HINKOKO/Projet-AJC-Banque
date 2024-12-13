@@ -1,5 +1,4 @@
-﻿using System.Net.NetworkInformation;
-using System.Text;
+﻿using System.Text;
 using ServeurAJCBanque.Models;
 using Transaction = ServeurAJCBanque.Models.Transaction;
 
@@ -8,7 +7,7 @@ namespace ServeurAJCBanque.MockBank
     public class BankGenerator
     {
         public string baseNumber = "497401850223"; // base de carte crédit - sans les 4 derniers
-        public string[] devises = { "EUR", "USD", "GBP" };
+        public string[] devises = { "EUR", "USD", "GBP", "RON", "RUB", "TWD"};
         public Random random = new Random();
 
         public List<Transaction> GenererTransactions(int count)
@@ -135,3 +134,5 @@ namespace ServeurAJCBanque.MockBank
         }
     }
 }
+
+
