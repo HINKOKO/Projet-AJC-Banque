@@ -62,7 +62,7 @@ namespace ApiAJCBanque.Controllers
                 //Id = input.Id,
                 DateO = input.DateOperation,
                 TypeOperation = input.TypeOp,
-                Montant = input.Montant * input.Rate,
+                Montant = (decimal)(input.Montant * input.Rate),
                 Carte = carte,
                 Compte = carte.Compte // Associate the related Compte
             };
