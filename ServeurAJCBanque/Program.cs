@@ -1,35 +1,48 @@
 ﻿using System.Configuration;
-using System.Data.Common;
-using System.Globalization;
 using Microsoft.Data.SqlClient;
 using ServeurAJCBanque.Models;
 using ServeurAJCBanque.MockBank;
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Text.Json;
-using System.IO;
-using System.Net.NetworkInformation;
+using ServeurAJCBanque.Authentication;
+using ServeurAJCBanque.DbConnection;
+using System.Globalization;
 
 namespace ServeurAJCBanque.Helpers;
 
 
 internal class Program
 {
-    static DbConnection dbConn;
     private static List<Transaction> allTxs = null;
-
-    static string csvPath = @"C:\Users\piotr\OneDrive\Documents\Back_Up_Pizzonio\POEI\NET\sln_AJCBanque\ServeurAJCBanque\datas\transactions\nouvelles_transactions.csv";
+    //static string csvPath = @"C:\Users\piotr\OneDrive\Documents\Back_Up_Pizzonio\POEI\NET\sln_AJCBanque\ServeurAJCBanque\datas\transactions\nouvelles_transactions.csv";
+    static string csvPath = ConfigurationManager.AppSettings["CsvFilePath"];
     private static void Main(string[] args)
     {
+        // Au demarage console - demander identifiants
+        Console.WriteLine("\n\t\tLa Steeve-Bank vous demande de vous identifer\n");
+        bool isAuthenticated = false;
+        do
+        {
+            isAuthenticated = Auth.AuthenticateUser();
+            if (!isAuthenticated)
+                Console.WriteLine("Accès refusé - verifiez vos identifiants.");
+
+        } while (isAuthenticated == false);
+
+        // si accès autoriser - load de toutes les transactions dans une liste
+        loadTransactions();
+
+        // Boucle sur Menu
         ConsoleKeyInfo choice;
         do
         {
-            Console.Clear();
             Console.WriteLine("\n\t\tBienvenue sur le serveur de la Steeve-Bank !\n");
             Console.WriteLine("\t\t| 1 - Recupérer dernieres transactions                 |");
             Console.WriteLine("\t\t| 2 - Traiter les transactions                         |");
             Console.WriteLine("\t\t| 3 - Afficher les transactions non exportées          |");
             Console.WriteLine("\t\t| 4 - Export des transactions en JSON                  |");
+            Console.WriteLine("\t\t| Q - Exit menu                                        |");
             Console.WriteLine("\t\t ------------------------------------------------------ ");
 
             Console.WriteLine("\t\tEnter your choice : ");
@@ -47,7 +60,7 @@ internal class Program
                     traiterTransactions();
                     break;
                 case ConsoleKey.NumPad3:
-                    loadTransactions();
+                    afficherTransactions(allTxs);
                     break;
                 case ConsoleKey.NumPad4:
                     exportJSON();
@@ -58,9 +71,11 @@ internal class Program
             }
             Console.WriteLine("\n press any key to continue...");
             Console.ReadKey();
+            Console.Clear();
         } while (choice.Key != ConsoleKey.Q);
     }
 
+    /* ========== RECUPERATION DES DERNIERES TRANSACTIONS ===================== */
     // recupTransactions() et SaveToCsv() - charge les dernières transactions de la Steeve-Bank
     // et les sauvegarde en CSV pour vérifications et traitement
     private static void recupTransactions()
@@ -70,9 +85,9 @@ internal class Program
             int startIndex = fullPath.IndexOf(@"datas\");
             if (startIndex >= 0)
             {
-                return fullPath.Substring(startIndex); 
+                return fullPath.Substring(startIndex);
             }
-            return fullPath; 
+            return fullPath;
         }
 
         try
@@ -91,7 +106,7 @@ internal class Program
 
     private static void SaveToCsv(List<Transaction> transactions, string csvPath)
     {
-        // si supprimé par mégarde - le recréer - sinon écrase le contenu (précédant contenu sauvegardé en base
+        // si supprimé  - le recréer - sinon écrase le contenu précédant du fichier CSV.
         string directory = Path.GetDirectoryName(csvPath);
         if (!Directory.Exists(directory))
         {
@@ -104,34 +119,28 @@ internal class Program
                 writer.WriteLine($"{tx.NumeroCarte};{tx.Montant.ToString(CultureInfo.InvariantCulture)};{tx.TypeOp};{tx.DateOperation:yyyy-dd-MMTHH:mm:ss};{tx.Devise}");
         }
     }
-    // ========== END OF RECUPERATION DES TRANSACTIONS =====================
+    /* ========== END OF RECUPERATION DES TRANSACTIONS ===================== */
 
 
 
-    // ============================== VERIFICATION ET TRAITEMENT TRANSACTIONS ==================
+    /* ============================== VERIFICATION ET TRAITEMENT TRANSACTIONS ================== */
     public static void traiterTransactions()
     {
         try
         {
-            var connDb = OpenDataBase();
             var transactions = parseCSV(csvPath);
 
-            if (InsertIntoDatabase(transactions, connDb))
+            if (InsertIntoDatabase(transactions))
                 Console.WriteLine($"{transactions.Count} transactions insérées en base.");
             else
                 Console.WriteLine($"transactions -> echec insertions");
-
-            CloseDataBase(connDb);
-
         }
         catch (Exception ex)
         {
             Console.WriteLine("Erreur analyse transactions -> " + ex.Message);
         }
-
-
-
     }
+
     public static List<Transaction> parseCSV(string csvPath)
     {
         var transactions = new List<Transaction>();
@@ -174,7 +183,7 @@ internal class Program
             _ => TypeOperation.Invalid // Si l'opération est inconnue, on retourne Invalid
         };
     }
-    static bool InsertIntoDatabase(List<Transaction> transactions, DbConnection dbConn)
+    static bool InsertIntoDatabase(List<Transaction> transactions)
     {
         // Si aucune transaction à insérer
         if (transactions.Count == 0)
@@ -182,40 +191,46 @@ internal class Program
             Console.WriteLine("Aucune transaction à insérer.");
             return false;
         }
+        string connectionString = ConfigurationManager.ConnectionStrings["dbTransactions"]?.ConnectionString;
+
 
         // Démarrer une transaction SQL pour garantir que toutes les insertions réussissent
-        using (var transaction = dbConn.BeginTransaction())
+        using (var dbConn = new SqlConnection(connectionString))
         {
             try
             {
-                foreach (var tx in transactions)
+                dbConn.Open();
+                Console.WriteLine("dbconn state -> " + dbConn.State);
+
+                using (var transaction = dbConn.BeginTransaction())
                 {
-                    var cmd = dbConn.CreateCommand();
-                    cmd.Transaction = transaction;
-                    cmd.CommandText = @"
+                    foreach (var tx in transactions)
+                    {
+                        var cmd = dbConn.CreateCommand();
+                        cmd.Transaction = transaction;
+                        cmd.CommandText = @"
                                 INSERT INTO Transactions (NumeroCarte, Montant, TypeOp, DateOperation, Devise, IsValid)
                                 VALUES (@NumeroCarte, @Montant, @TypeOp, @DateOperation, @Devise, @IsValid)";
 
-                    cmd.Parameters.Add(new SqlParameter("@NumeroCarte", tx.NumeroCarte));
-                    cmd.Parameters.Add(new SqlParameter("@Montant", tx.Montant));
-                    cmd.Parameters.Add(new SqlParameter("@TypeOp", (byte)tx.TypeOp));
-                    cmd.Parameters.Add(new SqlParameter("@DateOperation", tx.DateOperation));
-                    cmd.Parameters.Add(new SqlParameter("@Devise", tx.Devise));
-                    cmd.Parameters.Add(new SqlParameter("@IsValid", tx.IsValid));
+                        cmd.Parameters.Add(new SqlParameter("@NumeroCarte", tx.NumeroCarte));
+                        cmd.Parameters.Add(new SqlParameter("@Montant", tx.Montant));
+                        cmd.Parameters.Add(new SqlParameter("@TypeOp", (byte)tx.TypeOp));
+                        cmd.Parameters.Add(new SqlParameter("@DateOperation", tx.DateOperation));
+                        cmd.Parameters.Add(new SqlParameter("@Devise", tx.Devise));
+                        cmd.Parameters.Add(new SqlParameter("@IsValid", tx.IsValid));
 
-                    // Exécuter la commande d'insertion
-                    cmd.ExecuteNonQuery();
+                        // Exécuter la commande d'insertion
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    // Commit de la transaction
+                    transaction.Commit();
+                    Console.WriteLine($"{transactions.Count} transactions insérées.");
+                    return true;
                 }
-
-                // Commit de la transaction
-                transaction.Commit();
-                Console.WriteLine($"{transactions.Count} transactions insérées.");
-                return true;
             }
             catch (Exception ex)
             {
-                // Si une erreur se produit, rollback de la transaction
-                transaction.Rollback();
                 Console.WriteLine($"Erreur lors de l'insertion en base : {ex.Message}");
                 return false;
             }
@@ -230,39 +245,42 @@ internal class Program
     public static List<Transaction> loadTransactions()
     {
         allTxs = new List<Transaction>();
-        try
+        using (var dbConn = DatabaseConnection.Instance.GetConnection("dbTransactions"))
         {
-            var connDb = OpenDataBase();
-            var cmd = connDb.CreateCommand();
-            cmd.CommandText = "SELECT Id, NumeroCarte, Montant, TypeOp, DateOperation, Devise, IsValid FROM Transactions";
-            var rdr = cmd.ExecuteReader();
-
-            // empty case
-            if (!rdr.HasRows)
+            try
             {
-                Console.WriteLine("aucun transaction en base!");
-            }
+                var cmd = dbConn.CreateCommand();
+                cmd.CommandText = "SELECT Id, NumeroCarte, Montant, TypeOp, DateOperation, Devise, IsValid FROM Transactions";
+                var rdr = cmd.ExecuteReader();
 
-            while (rdr.Read())
+                // empty case
+                if (!rdr.HasRows)
+                {
+                    Console.WriteLine("aucun transaction en base!");
+                }
+
+                while (rdr.Read())
+                {
+                    int id = Convert.ToInt32(rdr["Id"]);
+                    string numerocarte = rdr["NumeroCarte"].ToString();
+                    decimal montant = Convert.ToDecimal(rdr["Montant"]);
+                    TypeOperation typeOp = (TypeOperation)Convert.ToInt32(rdr["TypeOp"]);
+                    DateTime dateTime = Convert.ToDateTime(rdr["DateOperation"]);
+                    string devise = rdr["Devise"].ToString();
+                    bool isvalid = Convert.ToBoolean(rdr["IsValid"]);
+
+                    var tx = new Transaction(id, numerocarte, montant, typeOp, dateTime, devise, isvalid);
+                    allTxs.Add(tx);
+                }
+            }
+            catch (Exception ex)
             {
-                int id = Convert.ToInt32(rdr["Id"]);
-                string numerocarte = rdr["NumeroCarte"].ToString();
-                decimal montant = Convert.ToDecimal(rdr["Montant"]);
-                TypeOperation typeOp = (TypeOperation)Convert.ToInt32(rdr["TypeOp"]);
-                DateTime dateTime = Convert.ToDateTime(rdr["DateOperation"]);
-                string devise = rdr["Devise"].ToString();
-                bool isvalid = Convert.ToBoolean(rdr["IsValid"]);
-
-                var tx = new Transaction(id, numerocarte, montant, typeOp, dateTime, devise, isvalid);
-                allTxs.Add(tx);
+                Console.WriteLine("Erreur lors du chargement de vos transactions en base" + ex.Message + ex.HelpLink);
             }
-
-            CloseDataBase(connDb);
-            afficherTransactions(allTxs);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine("Erreur lors du chargement de vos transactions en base" + ex.Message + ex.HelpLink);
+            finally
+            {
+                dbConn.Close();
+            }
         }
         return allTxs;
     }
@@ -273,8 +291,8 @@ internal class Program
         StringBuilder sb = new StringBuilder();
 
         // Filtrer avec LINQ - grouper par valides puis invalides
-        var validTxs = allTxs.Where(tx => tx.IsValid).ToList(); 
-        var invalidTxs = allTxs.Where(tx => !tx.IsValid).ToList(); 
+        var validTxs = allTxs.Where(tx => tx.IsValid).ToList();
+        var invalidTxs = allTxs.Where(tx => !tx.IsValid).ToList();
 
         sb.AppendLine($"\n------ {validTxs.Count} transactions valides non exportées en JSON ------\n");
         if (validTxs.Count > 0)
@@ -305,7 +323,7 @@ internal class Program
     //======= EXPORT AU FORMAT JSON DES TRANSACTIONS VALIDES =========
     private static async Task exportJSON()
     {
-        string exportJSONPath = @"C:\Users\piotr\OneDrive\Documents\Back_Up_Pizzonio\POEI\NET\sln_AJCBanque\ServeurAJCBanque\datas\JSON\transactions.json";
+        string exportJSONPath = ConfigurationManager.AppSettings["JSONFilePath"];
         string directory = Path.GetDirectoryName(exportJSONPath);
         if (!Directory.Exists(directory))
         {
@@ -313,7 +331,7 @@ internal class Program
         }
 
         // LINQ sur la méthode pour filtrer directement les transactions valides
-        var validTxs = loadTransactions().Where(tx => tx.IsValid).ToList();
+        var validTxs = allTxs.Where(tx => tx.IsValid).ToList();
 
         // Objets anonymes - pour ajout a la volée du taux si devise != EUR
         var txsToExport = new List<object>();
@@ -374,42 +392,4 @@ internal class Program
         }
         return 1;
     }
-
-
-
-    // ========= FIN EXPORT JSON ==========================
-
-    // ============ DATABASE LOGIC ============== //
-    public static DbConnection OpenDataBase()
-    {
-        var configNode = ConfigurationManager.ConnectionStrings["anuTransactions"];
-        // record the factory in factories
-        DbProviderFactories
-        .RegisterFactory(configNode.ProviderName, SqlClientFactory.Instance);
-        // Pick the name
-        DbProviderFactory dbpf = DbProviderFactories
-            .GetFactory(configNode.ProviderName);
-
-        DbConnection dbConnection = dbpf.CreateConnection();
-        dbConnection.ConnectionString = configNode.ConnectionString;
-
-        try
-        {
-            dbConnection.Open();
-            var state = dbConnection.State;
-            Console.WriteLine("state of db => " + state.ToString());
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine("pb database" + ex.Message);
-        }
-
-        return dbConnection;
-    }
-
-    public static void CloseDataBase(DbConnection dbConnection)
-    {
-        dbConnection.Close();
-    }
-    // =========== END OF DATABASE LOGIC ==============
 }
