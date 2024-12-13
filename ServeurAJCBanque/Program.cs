@@ -1,9 +1,11 @@
 ﻿using System.Configuration;
 using ServeurAJCBanque.Models;
-using ServeurAJCBanque.Helpers;
+using ServeurAJCBanque.Services;
+using ServeurAJCBanque.Managers;
 using ServeurAJCBanque.MockBank;
 using ServeurAJCBanque.Authentication;
 using System.Globalization;
+using ServeurAJCBanque.Repository;
 
 
 public class Program
@@ -38,7 +40,10 @@ public class Program
 
         // encapsulate the transactions management in a dedicated Manager
         var dbConnectionString = ConfigurationManager.ConnectionStrings["dbTransactions"].ConnectionString;
-        var txManager = new TransactionManager(dbConnectionString);
+        var transactionRepository = new TransactionRepository(dbConnectionString);
+        var txManager = new TransactionManager(transactionRepository);
+
+
         var allTxs = txManager.LoadTransactions();
 
         txManager.TransactionsExported += (sender, e) =>
@@ -48,7 +53,7 @@ public class Program
             File.WriteAllText(csvPath, string.Empty);
         };
 
-        txManager.TransactionsArchived += (sender, e) =>
+        transactionRepository.TransactionsArchived += (sender, e) =>
         {
             Console.WriteLine("ARCHIVAGE\n \ttable Transactions nettoyée\n\tTransactions invalides envoyées au fichier Log.");
         };
@@ -79,7 +84,7 @@ public class Program
                     recupTransactions();
                     break;
                 case ConsoleKey.NumPad2:
-                    txManager.traiterTransactions(csvPath);
+                    txManager.TraiterTransactions(csvPath);
                     break;
                 case ConsoleKey.NumPad3:
                     txManager.afficherTransactions(allTxs);
@@ -126,8 +131,6 @@ public class Program
             Console.WriteLine("Erreur ->  " + ex.Message);
         }
     }
-
-
     private static void SaveToCsv(List<Transaction> transactions, string csvPath)
     {
         // si supprimé  - le recréer - sinon écrase le contenu précédant du fichier CSV.
@@ -144,10 +147,5 @@ public class Program
         }
     }
     /* ========== END OF RECUPERATION DES TRANSACTIONS ===================== */
-
-
-   
-       
-
 
 }

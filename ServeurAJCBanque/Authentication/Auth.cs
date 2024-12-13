@@ -1,7 +1,7 @@
 ﻿using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Data.SqlClient;
-using ServeurAJCBanque.DbConnection;
+using ServeurAJCBanque.Repositories;
 
 namespace ServeurAJCBanque.Authentication
 {
