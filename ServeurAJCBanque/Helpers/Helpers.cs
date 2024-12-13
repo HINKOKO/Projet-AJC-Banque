@@ -9,7 +9,7 @@ namespace ServeurAJCBanque.Helpers
 {
     public class Helpers
     {
-        public static int LuhnCheckDigit(string number)
+        public static bool LuhnCheck(string number)
         {
             int sum = 0;
             bool isSecond = false;
@@ -26,7 +26,7 @@ namespace ServeurAJCBanque.Helpers
                 isSecond = !isSecond;
             }
 
-            return (10 - (sum % 10)) % 10;
+            return (10 - (sum % 10)) % 10 == 0;
         }
     }
 }
