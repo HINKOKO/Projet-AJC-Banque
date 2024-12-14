@@ -14,6 +14,8 @@ public class Program
     static string csvPath = ConfigurationManager.AppSettings["CsvFilePath"];
     static string jsonPath = ConfigurationManager.AppSettings["JSONFilePath"];
     static string logPath = ConfigurationManager.AppSettings["logFilePath"];
+    static string authConnectionString = ConfigurationManager.ConnectionStrings["dbAuth"].ConnectionString;
+
     // 10 transactions dragged back from server by default
     static int txFlow = 10;
 
@@ -31,7 +33,7 @@ public class Program
         bool isAuthenticated = false;
         do
         {
-            isAuthenticated = Auth.AuthenticateUser();
+            isAuthenticated = Auth.AuthenticateUser(authConnectionString);
             if (!isAuthenticated)
                 Console.WriteLine("Accès refusé - verifiez vos identifiants.");
 

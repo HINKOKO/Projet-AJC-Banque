@@ -5,9 +5,10 @@ using ServeurAJCBanque.Repositories;
 
 namespace ServeurAJCBanque.Authentication
 {
+
     public class Auth
     {
-        public static bool AuthenticateUser()
+        public static bool AuthenticateUser(string dbConn)
         {
             Console.Write("Nom utilisateur : ");
             string username = Console.ReadLine();
@@ -16,7 +17,7 @@ namespace ServeurAJCBanque.Authentication
             string password = ReadPassword();
 
             // recuperer username et pass hash en DB
-            string hashedPassDB = GetHashedPassDB(username);
+            string hashedPassDB = GetHashedPassDB(username, dbConn);
             if (hashedPassDB == null)
             {
                 Console.WriteLine("mauvaise combinaison");
@@ -27,14 +28,16 @@ namespace ServeurAJCBanque.Authentication
         }
 
         // Recuperer hash en base de données
-        private static string GetHashedPassDB(string logon)
+        private static string GetHashedPassDB(string logon, string dbConn)
         {
             string hashedPass = null;
-            using (SqlConnection conn = DatabaseConnection.Instance.GetConnection("dbAuth"))
+            using (var conn = new SqlConnection(dbConn))
             {
-                string query = "SELECT hashPassword FROM users WHERE logon = @Logon";
-                using (var cmd = new SqlCommand(query, conn))
+                try
                 {
+                    conn.Open();
+                    var cmd = conn.CreateCommand();
+                    cmd.CommandText = "SELECT hashPassword FROM users WHERE logon = @Logon;";
                     cmd.Parameters.AddWithValue("@Logon", logon);
                     using (var rdr = cmd.ExecuteReader())
                     {
@@ -43,6 +46,10 @@ namespace ServeurAJCBanque.Authentication
                             hashedPass = rdr["hashPassword"].ToString();
                         }
                     }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Erreur lors de l'accès au dbAuth");
                 }
             }
             return hashedPass;

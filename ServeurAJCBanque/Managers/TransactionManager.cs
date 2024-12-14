@@ -7,7 +7,6 @@ using ServeurAJCBanque.MockBank;
 using ServeurAJCBanque.Services;
 using ServeurAJCBanque.Models;
 using ServeurAJCBanque.Repositories;
-using System.Diagnostics;
 
 namespace ServeurAJCBanque.Managers;
 
