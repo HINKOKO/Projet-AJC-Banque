@@ -1,12 +1,15 @@
 ﻿
+
 using System.Diagnostics;
 using System.Net.Http;
 using System.Reflection.Metadata.Ecma335;
 using System.Text;
 using System.Text.Json;
+using System.Xml.Serialization;
 using ApiAJCBanque;
 using ApiAJCBanque.Datas;
 using ApiAJCBanque.Dto;
+using AppAJCBanque.DTO;
 using LibAJCBanque;
 using Microsoft.EntityFrameworkCore;
 using Swashbuckle.AspNetCore.SwaggerGen;
@@ -14,10 +17,8 @@ using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace AppAJCBanque
 {
-
     internal class Program
     {
-    
         public static void Main(string[] args)
         {
             bool continueProgramme = true;
@@ -28,8 +29,7 @@ namespace AppAJCBanque
 
         private static void Menu(bool continueProgramme)
         {
-
-            while (!continueProgramme);
+            while (!continueProgramme) ;
             {
                 ConsoleKeyInfo touche = new ConsoleKeyInfo();
                 AfficheMenu();
@@ -48,6 +48,11 @@ namespace AppAJCBanque
                             ExportPDF(continueProgramme);
                             break;
                         }
+                    case ConsoleKey.NumPad3:
+                        {
+                            ExportXML(continueProgramme);
+                            break;
+                        }
                     case ConsoleKey.Q:
                         {
                             Quitter(continueProgramme);
@@ -59,10 +64,7 @@ namespace AppAJCBanque
                             break;
                         }
                 }
-
             }
-
-
         }
 
         private static void Quitter(bool continueProgramme)
@@ -99,6 +101,83 @@ namespace AppAJCBanque
             throw new NotImplementedException();
         }
 
+        private static void ExportXML(bool continueProgramme)
+        {
+            Console.Clear();
+            Console.WriteLine("    -------------------------------");
+            Console.WriteLine("    | [2]  export Fichier XML  ---|");
+            Console.WriteLine("    -------------------------------");
+            TraitementExportXML();
+            Menu(continueProgramme);
+        }
+
+        private static async void TraitementExportXML()
+        {
+            try
+            {
+                var operations = await FetchOperations();
+
+                if (operations == null || !operations.Any())
+                {
+                    Console.WriteLine("Aucun operation disponibles pour export XML");
+                    return;
+                }
+
+                string path = @"C:\Users\piotr\OneDrive\Documents\Back_Up_Pizzonio\POEI\NET\sln_AJCBanque\AppAJCBanque\EXPORTS\";
+                string XMLPath = path + "xmlOperations";
+
+                // Convertir les operation en DTO pour cacher infos sensibles
+                var operationsXML = OperationXMLHelper.ConvertirPourXML(operations);
+
+                GenerateXML(operationsXML, XMLPath);
+                Console.WriteLine("Generation du XML - Succes. Consulter dans " + XMLPath);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Erreur generation XML " + ex.Message);
+            }
+        }
+        private static async Task<List<Operation>> FetchOperations()
+        {
+            string apiUrl = "http://localhost:5145/api/Operations";
+            using var httpClient = new HttpClient();
+            try
+            {
+                HttpResponseMessage response = await httpClient.GetAsync(apiUrl);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    Console.WriteLine($"Erreur lors de la récupération des données : {response.StatusCode}");
+                    return null;
+                }
+                string respBody = await response.Content.ReadAsStringAsync();
+                // Deserialiser le JSON
+                var operations = JsonSerializer.Deserialize<List<Operation>>(respBody, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                return operations ?? new List<Operation>();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Erreur lors de la recuperation des operations: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static void GenerateXML(List<OperationXML> operations, string XMLPath)
+        {
+            // ouvrir un file stream et un write stream
+            using FileStream fs = new FileStream(XMLPath, FileMode.Create);
+            using StreamWriter writer = new StreamWriter(fs, Encoding.UTF8);
+
+            XmlSerializer serializer = new XmlSerializer(typeof(List<OperationXML>));
+            serializer.Serialize(writer, operations);
+            Console.WriteLine("XML généré avec succès.");
+        }
+
+
         private static async void ImportJSON(bool continueProgramme)
         {
             Console.Clear();
@@ -108,6 +187,7 @@ namespace AppAJCBanque
 
             TraitementImportJSON().Wait();
             Menu(continueProgramme);
+
         }
 
         private static async Task TraitementImportJSON()
@@ -117,10 +197,10 @@ namespace AppAJCBanque
             int nbTransacTraitee = 0;
 
             // Recuperation du fichier // Chemin vers votre fichier JSON
-            string rep = @"C:\code\Courscsharpajc\ConsoleApp\sln_AJCBanque\ServeurAJCBanque\datas\JSON\";
+            string rep = @"C:\Users\piotr\OneDrive\Documents\Back_Up_Pizzonio\POEI\NET\sln_AJCBanque\ServeurAJCBanque\datas\JSON\";
             string filePath = rep + "transactions.json";
 
-            string apiUrl = "http://localhost:5207/api/Operations";
+            string apiUrl = "http://localhost:5145/api/Operations";
 
             string json = File.ReadAllText(filePath);
             var operations = JsonSerializer.Deserialize<List<OperationInputDto>>(json);
@@ -149,7 +229,7 @@ namespace AppAJCBanque
                 string payloadJson = JsonSerializer.Serialize(operationPayload);
                 payloadJson = payloadJson.Replace("\"Rate\":null", "\"Rate\":1");
 
-                Console.WriteLine("Enregistrement : traité :"+payloadJson);
+                Console.WriteLine("Enregistrement : traité :" + payloadJson);
 
                 var content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
 
@@ -163,7 +243,7 @@ namespace AppAJCBanque
                         Console.WriteLine($"Opération avec NumeroCarte {operation.NumeroCarte} envoyée avec succès.");
                         nbTransacTraitee++;
                         //httpClient.CancelPendingRequests();
-                        MajSolde(operation.NumeroCarte,operation.Montant,operation.TypeOp).Wait(); ;
+                        MajSolde(operation.NumeroCarte, operation.Montant, operation.TypeOp).Wait(); ;
                     }
                     else
                     {
@@ -182,20 +262,20 @@ namespace AppAJCBanque
 
         }
 
- 
+
 
         private static async Task MajSolde(string numeroCarte, decimal montant, TypeOperation typeOperation)
         {
             switch (typeOperation)
             {
-                case TypeOperation.R:   {montant = -montant;break;}
-                case TypeOperation.C:   { montant = -montant; break; }
-                case TypeOperation.V:   {break; }
+                case TypeOperation.R: { montant = -montant; break; }
+                case TypeOperation.C: { montant = -montant; break; }
+                case TypeOperation.V: { break; }
                 default: { break; }
             }
-                
 
-            string baseUrl = "http://localhost:5207/api"; // Remplacez par l'URL de votre API
+
+            string baseUrl = "http://localhost:5145/api"; // Remplacez par l'URL de votre API
             string url = "";
 
             using var httpClient2 = new HttpClient();
@@ -213,7 +293,7 @@ namespace AppAJCBanque
             {
                 PropertyNameCaseInsensitive = true // Permet d'ignorer la casse des noms des propriétés
             });
-            
+
             var numeroCompte = cartes
                 .Where(carte => carte.NumeroCarte == numeroCarte) // Filtrer par NumeroCarte
                 .Select(carte => carte.Compte?.NumeroCompte)      // Sélectionner le NumeroCompte associé
@@ -222,11 +302,11 @@ namespace AppAJCBanque
 
             // Sérialisation du nouveau solde
             string json = JsonSerializer.Serialize(montant);
-            HttpContent content = new  StringContent(json, Encoding.UTF8, "application/json");
+            HttpContent content = new StringContent(json, Encoding.UTF8, "application/json");
 
             try
             {
-                response = await httpClient2.PutAsync(url,content);
+                response = await httpClient2.PutAsync(url, content);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -246,11 +326,12 @@ namespace AppAJCBanque
 
         private static void AfficheMenu()
         {
-        
+
             Console.WriteLine("    -------------------------------");
             Console.WriteLine("    |---        Menu           ---|");
             Console.WriteLine("    | [1]  import Fichier JSON ---|");
             Console.WriteLine("    | [2]  export Fichier PDF  ---|");
+            Console.WriteLine("    | [3]  export Fichier XML  ---|");
             Console.WriteLine("    | [Q]  Quitter             ---|");
             Console.WriteLine("    -------------------------------");
             Console.WriteLine("    Tapez votre choix [1,2]");
