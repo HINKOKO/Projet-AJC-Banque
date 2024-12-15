@@ -6,6 +6,7 @@ using System.Reflection.Metadata.Ecma335;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Serialization;
+using System.Configuration;
 using ApiAJCBanque;
 using ApiAJCBanque.Datas;
 using ApiAJCBanque.Dto;
@@ -14,17 +15,51 @@ using LibAJCBanque;
 using Microsoft.EntityFrameworkCore;
 using Swashbuckle.AspNetCore.SwaggerGen;
 using static System.Runtime.InteropServices.JavaScript.JSType;
+using AppAJCBanque.Services;
 
 namespace AppAJCBanque
 {
     internal class Program
     {
+
         public static void Main(string[] args)
         {
+            // Instancier un FileWatcherService - espion sur dossier et abonnement a l'evenement
+            string spyOnPath = ConfigurationManager.AppSettings["SpyFilePath"];
+             var watcher = new FileWatcherService(spyOnPath);
+            watcher.TransactionsUpdated += OnTransactionsUpdated;
+
             bool continueProgramme = true;
+
+            Styles styles = new Styles();
+            Console.ForegroundColor = ConsoleColor.DarkMagenta;
+            Console.WriteLine(styles.AjcGreet);
             Console.WriteLine("--- Bienvenue sur l'application AJCBanque Services Employe ---");
+            Console.ResetColor();
             Console.WriteLine("");
             Menu(continueProgramme);
+        }
+
+        
+
+        private static void OnTransactionsUpdated(List<Models.Transaction> txs)
+        {
+            Console.WriteLine($"Mise a jour détectée : {txs.Count} transactions détectées - a traiter");
+            Console.WriteLine($"Mise a jour requises pour");
+            foreach (var tx in txs)
+            {
+                Console.WriteLine($"Compte {tx.NumeroCarte} Montant {tx.Montant}");
+            }
+            Console.WriteLine("traitement...");
+            Thread.Sleep(900);
+            try
+            {
+                ImportJSON(true);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"{ex.Message} {ex.Source}");
+            }
         }
 
         private static void Menu(bool continueProgramme)
@@ -65,6 +100,19 @@ namespace AppAJCBanque
                         }
                 }
             }
+        }
+
+        private static void AfficheMenu()
+        {
+
+            Console.WriteLine("    -------------------------------");
+            Console.WriteLine("    |---        Menu           ---|");
+            Console.WriteLine("    | [1]  import Fichier JSON ---|");
+            Console.WriteLine("    | [2]  export Fichier PDF  ---|");
+            Console.WriteLine("    | [3]  export Fichier XML  ---|");
+            Console.WriteLine("    | [Q]  Quitter             ---|");
+            Console.WriteLine("    -------------------------------");
+            Console.WriteLine("    Tapez votre choix [1,2]");
         }
 
         private static void Quitter(bool continueProgramme)
@@ -123,8 +171,8 @@ namespace AppAJCBanque
                     return;
                 }
 
-                string path = @"C:\Users\piotr\OneDrive\Documents\Back_Up_Pizzonio\POEI\NET\sln_AJCBanque\AppAJCBanque\EXPORTS\";
-                string XMLPath = path + "xmlOperations";
+                // A changer selon vos machines dans App.config !
+                string XMLPath = ConfigurationManager.AppSettings["XMLFilePath"];
 
                 // Convertir les operation en DTO pour cacher infos sensibles
                 var operationsXML = OperationXMLHelper.ConvertirPourXML(operations);
@@ -196,9 +244,9 @@ namespace AppAJCBanque
             int nbTransac = 0;
             int nbTransacTraitee = 0;
 
-            // Recuperation du fichier // Chemin vers votre fichier JSON
-            string rep = @"C:\Users\piotr\OneDrive\Documents\Back_Up_Pizzonio\POEI\NET\sln_AJCBanque\ServeurAJCBanque\datas\JSON\";
-            string filePath = rep + "transactions.json";
+            // Recuperation du fichier // Chemin vers votre fichier JSON //
+            // A changer selon vos machines dans App.Config !
+            string filePath = ConfigurationManager.AppSettings["JSONFilePath"];
 
             string apiUrl = "http://localhost:5145/api/Operations";
 
@@ -324,18 +372,7 @@ namespace AppAJCBanque
             }
         }
 
-        private static void AfficheMenu()
-        {
 
-            Console.WriteLine("    -------------------------------");
-            Console.WriteLine("    |---        Menu           ---|");
-            Console.WriteLine("    | [1]  import Fichier JSON ---|");
-            Console.WriteLine("    | [2]  export Fichier PDF  ---|");
-            Console.WriteLine("    | [3]  export Fichier XML  ---|");
-            Console.WriteLine("    | [Q]  Quitter             ---|");
-            Console.WriteLine("    -------------------------------");
-            Console.WriteLine("    Tapez votre choix [1,2]");
-        }
     }
 
 }
