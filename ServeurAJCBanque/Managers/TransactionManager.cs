@@ -7,16 +7,22 @@ using ServeurAJCBanque.MockBank;
 using ServeurAJCBanque.Services;
 using ServeurAJCBanque.Models;
 using ServeurAJCBanque.Repositories;
+using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 
 namespace ServeurAJCBanque.Managers;
 
 public class TransactionManager : ITransactionManager
 {
+    // Logique metier encapsulée dans la classe Transaction Manager
+    // Implemente son interface ITransactionManager
+
     private readonly ITransactionRepository repository;
     private readonly ExchangeRate exchangeRateService;
 
-
+    // Evenements pour déclenchement dans le Main
     public event EventHandler TransactionsExported;
+    public event EventHandler JsonAvailable;
 
     public TransactionManager(ITransactionRepository repository)
     {
@@ -37,16 +43,21 @@ public class TransactionManager : ITransactionManager
             try
             {
                 allTxs = LoadTransactions();
+                if (allTxs.Count > 0)
+                {
+
+                    Console.WriteLine($"{allTxs.Count} non traitées, svp traiter avec option [2]");
+                }
+                else
+                {
+                    Console.WriteLine("vous n'avez récupéré aucune transaction pour le moment.");
+                    Console.WriteLine($" svp récupérer avec option [1]");
+                }
             }
             catch (Exception ex)
             {
                 Console.WriteLine("Probleme au reload des transactions " + ex.Message);
             }
-        }
-        else
-        {
-            Console.WriteLine("vous n'avez traité aucune transaction pour le moment.");
-            Console.WriteLine("Penser a les recupérer puis traiter via menu 2.");
         }
         // Construire chaine de resultats
         StringBuilder sb = new StringBuilder();
@@ -71,12 +82,14 @@ public class TransactionManager : ITransactionManager
         sb.AppendLine($"\n------ {invalidTxs.Count} transactions invalides non exportées en LOG\n");
         if (invalidTxs.Count > 0)
         {
+            Console.ForegroundColor = ConsoleColor.Red; // rouge pour transactions invalides
             foreach (var tx in invalidTxs)
             {
                 sb.AppendLine(tx.ToString());
                 sb.AppendLine("\n");
             }
             Console.WriteLine(sb.ToString());
+            Console.ResetColor();
         }
     }
 
@@ -109,8 +122,6 @@ public class TransactionManager : ITransactionManager
         }
     }
 
-
-
     /* ========== TRAITEMENT DU FICHIERS CSV ========== */
     public List<Transaction> ParseCSV(string csvPath)
     {
@@ -119,15 +130,20 @@ public class TransactionManager : ITransactionManager
         foreach (var line in File.ReadLines(csvPath))
         {
             var cols = line.Split(';');
-            Console.WriteLine($"{cols}");
             if (cols.Length == 5)
             {
-                Console.WriteLine("Luhn tchik check sur " + cols[0]);
-                // Validation Luhn et TypeOp
+                Console.WriteLine("-----------------------------------------------------------------------");
+                Console.WriteLine("Verification sur " + cols[0]);
+                Task.Delay(500).Wait();
+                // Validation Luhn
                 bool isValidCard = BankGenerator.LuhnAlgorithm(cols[0]); // Numéro valide si le check-digit est 0
-                Console.WriteLine($"{isValidCard} sur {cols[0]}");
+                Console.WriteLine($"Carte valide sur {cols[0]} ? ->  {isValidCard}");
+                // Validation Type Operation
+                Console.WriteLine("Verification type operation " + cols[2]);
+                Task.Delay(500).Wait();
                 TypeOperation typeOp = ParseOpType(cols[2]);
                 bool isValidTypeOp = Enum.IsDefined(typeof(TypeOperation), typeOp) && typeOp != TypeOperation.Invalid;
+                Console.WriteLine($"Operation valide sur {cols[2]} ? -> {isValidTypeOp}");
 
                 var tx = new Transaction
                 {
@@ -156,8 +172,6 @@ public class TransactionManager : ITransactionManager
             _ => TypeOperation.Invalid
         };
     }
-
-
 
     /* =========== EXPORT EN JSON && CLEAN DE LA TABLE TRANSACTIONS ======= */
     public async Task ExportTransactionsAsync(string jsonPath, string logPath)
@@ -198,22 +212,45 @@ public class TransactionManager : ITransactionManager
         await File.WriteAllTextAsync(jsonPath, jsonData);
 
 
-        // 2. Write invalid transactions to log
+        // Write invalid transactions to log for further investigations
         var invalidTransactions = GetInvalidTransactions();
         var logData = string.Join(Environment.NewLine, invalidTransactions.Select(tx => tx.ToString()));
         await File.WriteAllTextAsync(logPath, logData);
 
-        // 3. Clear all transactions ? 
+        // Notify listener that the export is complete
+        OnExport(jsonPath);
+    }
 
-        // 4. Notify listeners that the export is complete
+    // Trigger event on export completed
+    public void OnExport(string jsonPath)
+    {
         TransactionsExported?.Invoke(this, EventArgs.Empty);
+        if (HasJsonData(jsonPath))
+        {
+            JsonAvailable?.Invoke(this, EventArgs.Empty);
+        }
+
     }
 
     /* ========== ARCHIVAGE DES TRANSACTIONS VALIDES ========== */
-
-   
     public async Task ArchiveValidTransactions()
     {
         repository.ArchiveValidTransactions();
+    }
+
+    public bool HasJsonData(string jsonPath)
+    {
+        if (File.Exists(jsonPath))
+        {
+            var contents = File.ReadAllText(jsonPath);
+            var txs = JsonSerializer.Deserialize<List<Transaction>>(contents);
+
+            if (txs != null && txs.Count > 0)
+            {
+                JsonAvailable?.Invoke(this, EventArgs.Empty);
+                return true;
+            }
+        }
+        return false;
     }
 }

@@ -6,7 +6,8 @@ using ServeurAJCBanque.MockBank;
 using ServeurAJCBanque.Authentication;
 using System.Globalization;
 using ServeurAJCBanque.Repository;
-
+using ServeurAJCBanque.Internal;
+using ServeurAJCBanque.Internal;
 
 public class Program
 {
@@ -18,6 +19,7 @@ public class Program
 
     // 10 transactions dragged back from server by default
     static int txFlow = 10;
+    static bool jsonAvailable = false;
 
 
     private static async Task Main(string[] args)
@@ -44,10 +46,13 @@ public class Program
         var dbConnectionString = ConfigurationManager.ConnectionStrings["dbTransactions"].ConnectionString;
         var transactionRepository = new TransactionRepository(dbConnectionString);
         var txManager = new TransactionManager(transactionRepository);
+        var txPuller = new TransactionPuller(csvPath);
+        var bankGenerator = new BankGenerator();
 
 
         var allTxs = txManager.LoadTransactions();
 
+        // Abonnement aux événements pour déclencher les délégués correspondants
         txManager.TransactionsExported += (sender, e) =>
         {
             // todo database logic
@@ -55,9 +60,19 @@ public class Program
             File.WriteAllText(csvPath, string.Empty);
         };
 
+        txManager.JsonAvailable += (sender, e) =>
+        {
+            jsonAvailable = !jsonAvailable;
+        };
+
+        txPuller.CSVModif += (sender, e) =>
+        {
+            Console.WriteLine("Fichier CSV -> nouvelles transactions !");
+        };
+
         transactionRepository.TransactionsArchived += (sender, e) =>
         {
-            Console.WriteLine("ARCHIVAGE\n \ttable Transactions nettoyée\n\tTransactions invalides envoyées au fichier Log.");
+            Console.WriteLine("ARCHIVAGE\n \tTable Transactions nettoyée\n\tTransactions invalides envoyées au fichier Log.");
         };
 
         // Affichage du menu
@@ -74,7 +89,7 @@ public class Program
             Console.WriteLine("\t\t| [Q] - Exit menu                                      |");
             Console.WriteLine("\t\t ------------------------------------------------------ ");
 
-            Console.WriteLine("\t\tEnter your choice : ");
+            Console.WriteLine("\t\t Choix menu : ");
             choice = Console.ReadKey(true);
 
             switch (choice.Key)
@@ -83,7 +98,8 @@ public class Program
                     Console.WriteLine("\n\t\tA bientôt sur le serveur de la Steeve-Bank !\n");
                     break;
                 case ConsoleKey.NumPad1:
-                    recupTransactions();
+                    txPuller.RecupTransactions(bankGenerator, txFlow);
+                    txPuller.StopWatching();
                     break;
                 case ConsoleKey.NumPad2:
                     txManager.TraiterTransactions(csvPath);
@@ -99,55 +115,8 @@ public class Program
                     Console.WriteLine("Option Inconnue !");
                     break;
             }
-            Console.WriteLine("\n press any key to continue...");
             Console.ReadKey(true);
             Console.Clear();
         } while (choice.Key != ConsoleKey.Q);
     }
-
-
-    /* ========== RECUPERATION DES DERNIERES TRANSACTIONS ===================== */
-    // recupTransactions() et SaveToCsv() - charge les dernières transactions de la Steeve-Bank
-    // et les sauvegarde en CSV pour vérifications et traitement
-    private static void recupTransactions()
-    {
-        static string GetRelativeCsvPath(string fullPath)
-        {
-            int startIndex = fullPath.IndexOf(@"datas\");
-            if (startIndex >= 0)
-            {
-                return fullPath.Substring(startIndex);
-            }
-            return fullPath;
-        }
-
-        try
-        {
-            BankGenerator bankGenerator = new BankGenerator();
-            var transactions = BankGenerator.GenererTransactions(txFlow);
-            SaveToCsv(transactions, csvPath);
-            Console.WriteLine($"\ntransactions récupérées avec succès - retrouvez-les dans le fichier {GetRelativeCsvPath(csvPath)}");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine("Erreur ->  " + ex.Message);
-        }
-    }
-    private static void SaveToCsv(List<Transaction> transactions, string csvPath)
-    {
-        // si supprimé  - le recréer - sinon écrase le contenu précédant du fichier CSV.
-        string directory = Path.GetDirectoryName(csvPath);
-        if (!Directory.Exists(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        using (var writer = new StreamWriter(csvPath))
-        {
-            foreach (var tx in transactions)
-                writer.WriteLine($"{tx.NumeroCarte};{tx.Montant.ToString(CultureInfo.InvariantCulture)};{tx.TypeOp};{tx.DateOperation:yyyy-dd-MMTHH:mm:ss};{tx.Devise}");
-        }
-    }
-    /* ========== END OF RECUPERATION DES TRANSACTIONS ===================== */
-
 }
